@@ -1,7 +1,7 @@
 
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import api from "../services/api.js";
+import api from "../../services/api.js";
 
 const AdminLogin = () => {
   const navigate = useNavigate();
@@ -53,7 +53,19 @@ const AdminLogin = () => {
         );
       }
 
-      // Step 2: Verify the session using the HTTP-only cookie
+      // Step 2: Save the token for Bearer authentication
+      const token = loginResponse.data?.token;
+
+      if (!token) {
+        throw new Error(
+          "Login succeeded, but the server did not return a token."
+        );
+      }
+
+      localStorage.setItem("adminToken", token);
+
+      // Step 3: Verify authentication
+      // api.js automatically attaches the Bearer token.
       const profileResponse = await api.get("/auth/me", {
         withCredentials: true,
       });
@@ -65,7 +77,7 @@ const AdminLogin = () => {
         );
       }
 
-      // Step 3: Navigate only after session verification
+      // Step 4: Open the admin dashboard
       navigate("/admin/dashboard", { replace: true });
     } catch (err) {
       const status = err.response?.status;
@@ -76,6 +88,11 @@ const AdminLogin = () => {
         message: serverMessage,
         error: err.message,
       });
+
+      // Remove a potentially invalid token after failed verification.
+      if (status === 401 || status === 403) {
+        localStorage.removeItem("adminToken");
+      }
 
       if (status === 401) {
         setError(
