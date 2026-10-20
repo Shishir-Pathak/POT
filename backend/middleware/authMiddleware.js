@@ -1,19 +1,23 @@
-// middleware/authMiddleware.js
+
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import Admin from "../models/Admin.js";
 
 const authMiddleware = async (req, res, next) => {
   try {
-    // ── 1. Prefer Authorization: Bearer <token> ──────────────
-    const header = req.headers.authorization || "";
-    let token = header.startsWith("Bearer ") ? header.slice(7).trim() : null;
+    // 1. Check the Authorization header first.
+    const authorization = req.headers.authorization || "";
 
-    // ── 2. Fall back to the httpOnly cookie ──────────────────
-    if (!token && req.cookies?.adminToken) {
-      token = req.cookies.adminToken;
+    let token = authorization.startsWith("Bearer ")
+      ? authorization.slice(7).trim()
+      : null;
+
+    // 2. Fall back to the httpOnly cookie.
+    if (!token) {
+      token = req.cookies?.adminToken || null;
     }
 
+    // 3. Ensure a token exists.
     if (!token) {
       return res.status(401).json({
         success: false,
@@ -21,15 +25,25 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
-    // ── 3. Verify signature + issuer + audience ─────────────
+    // 4. Ensure the JWT secret is configured.
+    if (!process.env.JWT_SECRET) {
+      console.error("JWT_SECRET is not configured.");
+
+      return res.status(500).json({
+        success: false,
+        message: "Server configuration error.",
+      });
+    }
+
+    // 5. Verify the token.
     const decoded = jwt.verify(token, process.env.JWT_SECRET, {
       issuer: "portfolio-api",
       audience: "portfolio-admin",
     });
 
-    // ── 4. Sanity-check the payload ─────────────────────────
+    // 6. Validate the admin ID.
     if (
-      decoded.role !== "admin" ||
+      !decoded.sub ||
       !mongoose.isValidObjectId(decoded.sub)
     ) {
       return res.status(401).json({
@@ -38,17 +52,27 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
-    // ── 5. Ensure the admin still exists & is still an admin ─
+    // 7. Find the admin in MongoDB.
     const admin = await Admin.findById(decoded.sub).select("-password");
 
     if (!admin || admin.role !== "admin") {
       return res.status(401).json({
         success: false,
-        message: "Admin account not found.",
+        message: "Admin account not found or access denied.",
       });
     }
 
+    // 8. Validate the token role if one is present.
+    if (decoded.role && decoded.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Admin access required.",
+      });
+    }
+
+    // 9. Make the authenticated admin available to routes.
     req.admin = admin;
+
     next();
   } catch (error) {
     if (
@@ -56,7 +80,6 @@ const authMiddleware = async (req, res, next) => {
       error.name === "TokenExpiredError" ||
       error.name === "NotBeforeError"
     ) {
-      console.error("❌ Auth middleware:", error.name, "-", error.message);
       return res.status(401).json({
         success: false,
         message: "Session expired or invalid. Please log in again.",
