@@ -1,18 +1,12 @@
 
-// src/services/api.js
 import axios from "axios";
 
-const PROD_FALLBACK =
-  "https://portfolio-backend.onrender.com";
-
-const DEV_FALLBACK =
-  "http://localhost:5000";
+const PROD_FALLBACK = "https://pot-78ue.onrender.com";
+const DEV_FALLBACK = "http://localhost:5000";
 
 const rawBase =
   import.meta.env.VITE_API_URL ||
-  (import.meta.env.DEV
-    ? DEV_FALLBACK
-    : PROD_FALLBACK);
+  (import.meta.env.DEV ? DEV_FALLBACK : PROD_FALLBACK);
 
 const API_ORIGIN = String(rawBase)
   .trim()
@@ -24,20 +18,24 @@ const api = axios.create({
   withCredentials: true,
 });
 
-// Request interceptor
+// Add Bearer token if your frontend stores one after login.
 api.interceptors.request.use(
   (config) => {
-    // Cookie-based authentication is handled automatically by Axios.
-    // Do not read or store the HTTP-only cookie in JavaScript.
+    const token = localStorage.getItem("adminToken");
 
+    if (token) {
+      config.headers.set
+        ? config.headers.set("Authorization", `Bearer ${token}`)
+        : (config.headers.Authorization = `Bearer ${token}`);
+    }
+
+    // Let the browser set the multipart boundary for FormData.
     if (
       typeof FormData !== "undefined" &&
       config.data instanceof FormData
     ) {
-      config.headers.delete?.("Content-Type");
-
-      if (config.headers.set) {
-        config.headers.set("Content-Type", undefined);
+      if (config.headers.delete) {
+        config.headers.delete("Content-Type");
       } else {
         delete config.headers["Content-Type"];
       }
@@ -48,18 +46,22 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor
+// Handle expired or missing authentication.
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
       const url = error.config?.url || "";
       const isLoginRequest = url.includes("/auth/login");
-      const onLoginPage =
-        window.location.pathname.includes("/login");
+      const isMeRequest = url.includes("/auth/me");
+      const onLoginPage = window.location.pathname.includes("/login");
 
       if (!isLoginRequest && !onLoginPage) {
-        window.location.href = "/admin/login";
+        localStorage.removeItem("adminToken");
+
+        if (!isMeRequest) {
+          window.location.href = "/admin/login";
+        }
       }
     }
 
@@ -68,10 +70,7 @@ api.interceptors.response.use(
 );
 
 if (import.meta.env.DEV) {
-  console.log(
-    "API base URL:",
-    api.defaults.baseURL
-  );
+  console.log("API base URL:", api.defaults.baseURL);
 }
 
 export default api;
