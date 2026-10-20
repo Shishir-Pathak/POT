@@ -22,70 +22,82 @@ const AdminLogin = () => {
       [name]: value,
     }));
 
-    if (error) {
-      setError("");
-    }
+    if (error) setError("");
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    if (loading) return;
+
     setError("");
     setLoading(true);
 
     try {
-      // Step 1: Login and receive the HTTP-only admin cookie
-      const loginResponse = await api.post("/auth/login", {
-        email: formData.email.trim().toLowerCase(),
-        password: formData.password,
-      });
+      // Step 1: Authenticate admin
+      const loginResponse = await api.post(
+        "/auth/login",
+        {
+          email: formData.email.trim().toLowerCase(),
+          password: formData.password,
+        },
+        {
+          withCredentials: true,
+        }
+      );
 
       if (!loginResponse.data?.success) {
         throw new Error(
-          loginResponse.data?.message || "Login failed. Please try again."
+          loginResponse.data?.message ||
+            "Login failed. Please try again."
         );
       }
 
-      console.log("Admin login successful.");
-
-      // Step 2: Verify the authenticated admin session
-      const profileResponse = await api.get("/auth/me");
+      // Step 2: Verify the session using the HTTP-only cookie
+      const profileResponse = await api.get("/auth/me", {
+        withCredentials: true,
+      });
 
       if (!profileResponse.data?.success) {
         throw new Error(
           profileResponse.data?.message ||
-            "Login succeeded, but the admin session could not be verified."
+            "Login succeeded, but your session could not be verified."
         );
       }
 
-      // Step 3: Navigate after successful verification
+      // Step 3: Navigate only after session verification
       navigate("/admin/dashboard", { replace: true });
     } catch (err) {
       const status = err.response?.status;
-      const message = err.response?.data?.message;
+      const serverMessage = err.response?.data?.message;
 
       console.error("Admin authentication error:", {
         status,
-        message,
+        message: serverMessage,
         error: err.message,
       });
 
       if (status === 401) {
         setError(
-          message || "Authentication failed. Please check your credentials."
+          serverMessage ||
+            "Authentication failed. Please sign in again."
         );
       } else if (status === 403) {
         setError(
-          message || "You do not have permission to access this page."
+          serverMessage ||
+            "You do not have permission to access this page."
         );
       } else if (err.response) {
-        setError(message || "An error occurred during authentication.");
+        setError(
+          serverMessage ||
+            "The server could not complete your request."
+        );
       } else if (err.request) {
         setError(
-          "Unable to connect to the server. Please check your backend and try again."
+          "Unable to connect to the server. Please check your connection."
         );
       } else {
-        setError(err.message || "Something went wrong. Please try again.");
+        setError(err.message || "Something went wrong.");
       }
     } finally {
       setLoading(false);
