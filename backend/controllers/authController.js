@@ -1,16 +1,32 @@
-
 import bcrypt from "bcryptjs";
 import Admin from "../models/Admin.js";
 import generateToken from "../utils/generateToken.js";
 
-const isProd = process.env.NODE_ENV === "production";
+/**
+ * Robust production detection.
+ * - Uses NODE_ENV when set.
+ * - Falls back to detecting an https FRONTEND_URL, so Render deployments
+ *   work even if NODE_ENV was forgotten in the dashboard.
+ */
+const isProd =
+  process.env.NODE_ENV === "production" ||
+  (process.env.FRONTEND_URL || "").startsWith("https://");
 
 const cookieOptions = () => ({
+  httpOnly: true,
+  secure: isProd,                 // required when sameSite === "none"
+  sameSite: isProd ? "none" : "lax",
+  path: "/",
+  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  // Not setting `domain` on purpose: onrender.com is a public suffix,
+  // so setting .onrender.com breaks the cookie entirely.
+});
+
+const clearCookieOptions = () => ({
   httpOnly: true,
   secure: isProd,
   sameSite: isProd ? "none" : "lax",
   path: "/",
-  maxAge: 60 * 60 * 1000,
 });
 
 // POST /api/auth/login
@@ -49,7 +65,6 @@ export const loginAdmin = async (req, res, next) => {
 
     if (!process.env.JWT_SECRET) {
       console.error("JWT_SECRET is not configured.");
-
       return res.status(500).json({
         success: false,
         message: "Server configuration error.",
@@ -58,12 +73,14 @@ export const loginAdmin = async (req, res, next) => {
 
     const token = generateToken(admin._id);
 
+    // Set the auth cookie (primary mechanism).
     res.cookie("adminToken", token, cookieOptions());
 
     return res.status(200).json({
       success: true,
       message: "Login successful.",
-      token,
+      token, // ⭐ kept on purpose — frontend should also send it as
+             //   `Authorization: Bearer <token>` as a fallback.
       admin: {
         id: admin._id,
         name: admin.name,
@@ -79,6 +96,8 @@ export const loginAdmin = async (req, res, next) => {
 // GET /api/auth/me
 export const getAdminProfile = async (req, res, next) => {
   try {
+    // req.admin is populated by your auth middleware, which should
+    // accept BOTH the cookie and a Bearer token.
     const admin = await Admin.findById(req.admin.id).select("-password");
 
     if (!admin) {
@@ -104,12 +123,7 @@ export const getAdminProfile = async (req, res, next) => {
 
 // POST /api/auth/logout
 export const logoutAdmin = (req, res) => {
-  res.clearCookie("adminToken", {
-    httpOnly: true,
-    secure: isProd,
-    sameSite: isProd ? "none" : "lax",
-    path: "/",
-  });
+  res.clearCookie("adminToken", clearCookieOptions());
 
   return res.status(200).json({
     success: true,

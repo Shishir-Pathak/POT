@@ -1,4 +1,3 @@
-
 // backend/server.js
 import "dotenv/config";
 import express from "express";
@@ -18,17 +17,16 @@ import errorMiddleware from "./middleware/errorMiddleware.js";
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// 🔑 REQUIRED ON RENDER: trust the reverse proxy so secure cookies work.
+app.set("trust proxy", 1);
+
 // Validate required environment variables
 if (!process.env.MONGO_URI || !process.env.JWT_SECRET) {
-  throw new Error(
-    "MONGO_URI and JWT_SECRET must be configured."
-  );
+  throw new Error("MONGO_URI and JWT_SECRET must be configured.");
 }
 
 if (process.env.JWT_SECRET.length < 32) {
-  throw new Error(
-    "JWT_SECRET must be at least 32 characters long."
-  );
+  throw new Error("JWT_SECRET must be at least 32 characters long.");
 }
 
 // Basic security
@@ -36,16 +34,15 @@ app.disable("x-powered-by");
 
 app.use(
   helmet({
-    crossOriginResourcePolicy: {
-      policy: "cross-origin",
-    },
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    // Allow cross-origin popups/opens (helps with Vercel preview URLs)
+    crossOriginOpenerPolicy: { policy: "unsafe-none" },
   })
 );
 
 // Request logger
 app.use((req, res, next) => {
   const startedAt = Date.now();
-
   res.on("finish", () => {
     console.log(
       `${res.statusCode} ${req.method} ${req.originalUrl} - ${
@@ -53,7 +50,6 @@ app.use((req, res, next) => {
       }ms`
     );
   });
-
   next();
 });
 
@@ -76,50 +72,40 @@ const allowedOrigins = new Set([
 
 const corsOptions = {
   origin(origin, callback) {
-    // Allow requests without an Origin header, such as server-to-server.
-    if (!origin) {
-      return callback(null, true);
-    }
+    if (!origin) return callback(null, true); // server-to-server, curl, etc.
 
     const cleanOrigin = origin.replace(/\/+$/, "");
 
-    // Allow configured origins and Vercel deployment subdomains.
-    const isVercel =
-      /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(cleanOrigin);
+    const isVercel = /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(cleanOrigin);
+    const isRender = /^https:\/\/[a-z0-9-]+\.onrender\.com$/i.test(cleanOrigin);
 
-    if (allowedOrigins.has(cleanOrigin) || isVercel) {
+    if (allowedOrigins.has(cleanOrigin) || isVercel || isRender) {
       return callback(null, true);
     }
 
     console.warn("CORS blocked origin:", cleanOrigin);
-
     return callback(new Error("Origin not allowed by CORS"));
   },
 
   credentials: true,
 
-  methods: [
-    "GET",
-    "POST",
-    "PUT",
-    "PATCH",
-    "DELETE",
-    "OPTIONS",
-  ],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 
-  allowedHeaders: [
-    "Content-Type",
-    "Authorization",
-  ],
+  // 'Cookie' isn't strictly required by browsers but doesn't hurt.
+  allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
+
+  // Let the browser read the Set-Cookie header (useful for debugging).
+  exposedHeaders: ["Set-Cookie"],
 
   optionsSuccessStatus: 204,
 };
 
-// Register CORS before API routes.
+// Register CORS before any route/middleware that may respond.
 app.use(cors(corsOptions));
 
 // Parse request bodies and cookies.
-app.use(express.json({ limit: "10kb" }));
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 // Health check
@@ -158,12 +144,8 @@ const startServer = async () => {
       console.log("======================================");
       console.log(`Portfolio API running on port ${PORT}`);
       console.log("Allowed frontend origins:");
-
-      allowedOrigins.forEach((origin) => {
-        console.log(`  ${origin}`);
-      });
-
-      console.log("Vercel subdomains: allowed");
+      allowedOrigins.forEach((origin) => console.log(`  ${origin}`));
+      console.log("Vercel / Render subdomains: allowed");
       console.log("======================================");
     });
   } catch (error) {

@@ -1,5 +1,5 @@
 // frontend/src/App.jsx
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -7,27 +7,40 @@ import {
   useLocation,
 } from "react-router-dom";
 
+// Eager: the landing page holds the LCP (Hero) — keep it in the main bundle
 import Home from "./pages/Home.jsx";
-import Products from "./pages/Products.jsx";
-import Courses from "./pages/Courses.jsx";
-import CourseDetail from "./pages/CourseDetail.jsx";
-import NotFound from "./pages/NotFound.jsx";
 
-import AdminLogin from "./pages/AdminLogin.jsx";
-import AdminDashboard from "./pages/AdminDashboard.jsx";
-import AboutManagement from "./pages/admin/AboutManagement.jsx";
-import ContactMessages from "./pages/admin/ContactMessages.jsx";
-import ContactDetail from "./pages/admin/ContactDetail.jsx";
-import ProductManagement from "./pages/admin/ProductManagement.jsx";
-import ProductForm from "./pages/admin/ProductForm.jsx";
-import ExperienceManagement from "./pages/admin/ExperienceManagement.jsx";
-import ExperienceForm from "./pages/admin/ExperienceForm.jsx";
-import SocialLinksManagement from "./pages/admin/SocialLinksManagement.jsx";
-
+// Eager: tiny shared chrome — must render instantly on every route
 import AdminProtectedRoute from "./components/AdminProtectedRoute.jsx";
-import AdminLayout from "./components/admin/AdminLayout.jsx";
 import Navbar from "./components/Navbar.jsx";
 import Footer from "./components/Footer.jsx";
+
+// Lazy: everything else becomes its own chunk on demand
+const Products      = lazy(() => import("./pages/Products.jsx"));
+const Courses       = lazy(() => import("./pages/Courses.jsx"));
+const CourseDetail  = lazy(() => import("./pages/CourseDetail.jsx"));
+const NotFound      = lazy(() => import("./pages/NotFound.jsx"));
+
+const AdminLogin            = lazy(() => import("./pages/AdminLogin.jsx"));
+const AdminDashboard        = lazy(() => import("./pages/AdminDashboard.jsx"));
+const AboutManagement       = lazy(() => import("./pages/admin/AboutManagement.jsx"));
+const ContactMessages       = lazy(() => import("./pages/admin/ContactMessages.jsx"));
+const ContactDetail         = lazy(() => import("./pages/admin/ContactDetail.jsx"));
+const ProductManagement     = lazy(() => import("./pages/admin/ProductManagement.jsx"));
+const ProductForm           = lazy(() => import("./pages/admin/ProductForm.jsx"));
+const ExperienceManagement  = lazy(() => import("./pages/admin/ExperienceManagement.jsx"));
+const ExperienceForm        = lazy(() => import("./pages/admin/ExperienceForm.jsx"));
+const SocialLinksManagement = lazy(() => import("./pages/admin/SocialLinksManagement.jsx"));
+
+const AdminLayout = lazy(() => import("./components/admin/AdminLayout.jsx"));
+
+function PageFallback() {
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center text-slate-400">
+      Loading…
+    </div>
+  );
+}
 
 function ScrollHandler() {
   const { pathname, hash } = useLocation();
@@ -56,7 +69,10 @@ function MainLayout({ children }) {
   return (
     <>
       <Navbar />
-      <main>{children}</main>
+      <main>
+        {/* Navbar/Footer stay put; only the page content shows the fallback */}
+        <Suspense fallback={<PageFallback />}>{children}</Suspense>
+      </main>
       <Footer />
     </>
   );
@@ -104,10 +120,26 @@ function AppRoutes() {
           }
         />
 
-        <Route path="/admin/login" element={<AdminLogin />} />
+        {/* Admin login — lazy, wrapped in Suspense at the boundary */}
+        <Route
+          path="/admin/login"
+          element={
+            <Suspense fallback={<PageFallback />}>
+              <AdminLogin />
+            </Suspense>
+          }
+        />
 
+        {/* Protected admin area */}
         <Route element={<AdminProtectedRoute />}>
-          <Route path="/admin" element={<AdminLayout />}>
+          <Route
+            path="/admin"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <AdminLayout />
+              </Suspense>
+            }
+          >
             <Route path="dashboard" element={<AdminDashboard />} />
             <Route path="about" element={<AboutManagement />} />
 
@@ -126,7 +158,14 @@ function AppRoutes() {
           </Route>
         </Route>
 
-        <Route path="*" element={<NotFound />} />
+        <Route
+          path="*"
+          element={
+            <Suspense fallback={<PageFallback />}>
+              <NotFound />
+            </Suspense>
+          }
+        />
       </Routes>
     </>
   );
